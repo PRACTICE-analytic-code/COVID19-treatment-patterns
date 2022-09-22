@@ -1,5 +1,14 @@
 # Aim 2 functions
 
+# Run a likelihood ratio test to check if we should use splines on diagnosisday
+testspline <- function(nested, complex){
+  p <- NULL
+  for(i in 1:length(nested)){
+    p <- c(p, lrtest(nested[[i]]$glm_res, complex[[i]]$glm_res)$`Pr(>Chisq)`[2])
+  }
+  return(p)
+}
+
 # Fit models with robust standard errors (practice-level cluster)
 sglm <- function(d){
   # extract parameters and covariance matrix
@@ -8,6 +17,15 @@ sglm <- function(d){
   
   
   summary( miceadds::pool_mi( qhat=betas, u=vars ) )
+}
+
+sglm2 <- function(d){
+  # extract parameters and covariance matrix
+  betas <- lapply(d, FUN=function(rr){ coef(rr) } )
+  vars <- lapply(d, FUN=function(rr){ vcov(rr) } )
+  
+  
+  miceadds::pool_mi( qhat=betas, u=vars )
 }
 
 # Generate predicted probabilities
@@ -86,6 +104,11 @@ glmpp <- function(m, d, cp = F, sts = F, cvar = "cancer"){
       yp <- d1 %>% tidyr::expand(agegt75)
       
       cvar.t <- tibble(agegt75 = numeric())
+      
+      #region
+    } else if(cvar == "region") {
+      yp <- tibble(region=c("Northeast", "Midwest", "South", "West", "Other"))
+      cvar.t <- tibble(region = character())
     }
     # Set # possible combinations
     combos <- nrow(yp)
@@ -145,6 +168,8 @@ glmpp <- function(m, d, cp = F, sts = F, cvar = "cancer"){
                             tt$iother == yp$iother[k], T, F)
         } else if(cvar == "age"){
           subtf <- ifelse(tt$agegt75 == yp$agegt75[k], T, F)
+        } else if(cvar == "region"){
+          subtf <- ifelse(tt$regionf == yp$region[k], T, F)
         }
         
       }
@@ -288,6 +313,8 @@ glmpp <- function(m, d, cp = F, sts = F, cvar = "cancer"){
         cvar.t <- cvar.t %>% add_row(igov = yp$igov[k], iother = yp$iother[k])
       } else if(cvar == "age"){
         cvar.t <- cvar.t %>% add_row(agegt75 = yp$agegt75[k])
+      } else if(cvar == "region"){
+        cvar.t <- cvar.t %>% add_row(region = yp$region[k])
       }
     } 
   }

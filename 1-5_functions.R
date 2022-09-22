@@ -82,6 +82,9 @@ survpp <- function(m, d, cp = F, sts = T, cvar = "cancer"){
     } else if(cvar == "age") {
       yp <- d1 %>% tidyr::expand(agegt75)
       cvar.t <- tibble(agegt75 = numeric())
+    } else if(cvar == "region") {
+      yp <- tibble(region=c("Northeast", "Midwest", "South", "West", "Other"))
+      cvar.t <- tibble(region = character())
     }
     # Set # possible combinations
     combos <- nrow(yp)
@@ -144,6 +147,8 @@ survpp <- function(m, d, cp = F, sts = T, cvar = "cancer"){
                             tt$iother == yp$iother[k], T, F)
         } else if(cvar == "age"){
           subtf <- ifelse(tt$agegt75 == yp$agegt75[k], T, F)
+        } else if(cvar == "region"){
+          subtf <- ifelse(tt$regionf == yp$region[k], T, F)
         }
         
       }
@@ -277,6 +282,8 @@ survpp <- function(m, d, cp = F, sts = T, cvar = "cancer"){
         cvar.t <- cvar.t %>% add_row(igov = yp$igov[k], iother = yp$iother[k])
       } else if(cvar == "age"){
         cvar.t <- cvar.t %>% add_row(agegt75 = yp$agegt75[k])
+      } else if(cvar == "region"){
+        cvar.t <- cvar.t %>% add_row(region = yp$region[k])
       }
     } 
   }

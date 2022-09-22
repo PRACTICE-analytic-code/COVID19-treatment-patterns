@@ -13,11 +13,29 @@ library(survival)
 
 # Data Prep ####################################################################
 # N = 16259
-tdat <- readRDS("/data/analytic/PRACTICE-analytic-data_2021-03-30.rds") %>%
+tdat <- readRDS("/data/analytic/PRACTICE-analytic-data_2021-08-23.rds") %>%
    select(patientid, state, diagnosisdate)
-adat <- readRDS("/data/analytic/PRACTICE-imputed-data-derv_2021-03-31.rds") %>%
+adat <- readRDS("/data/analytic/PRACTICE-imputed-data-derv_2021-08-23.rds") %>%
    mice::complete("long", include = T) %>%
-   left_join(tdat, by="patientid")
+   left_join(tdat, by="patientid") %>%
+   # Clasify regions
+   mutate(region = ifelse(state %in% c("CT", "ME", "MA", "NH", "RI", "Vt",
+                                       "NJ", "NY", "PA"), 1,
+                   ifelse(state %in% c("IL", "IN", "MI", "OH", "WI", "IA", "KS",
+                                       "MN", "MO", "NE", "ND", "SD"), 2,
+                   ifelse(state %in% c("DE", "FL", "GA", "MD", "NC", "SC", "VA", "DC",
+                                       "AL", "KY", "MS", "TN", "AR", "LA", "OK",
+                                       "TX"), 3,
+                   ifelse(state %in% c("AZ", "CO", "ID", "MT", "NV", "NM", "UT",
+                                       "WY", "AK", "CA", "HI", "OR", "WA"), 4, 9
+                          )))),
+          regionf = factor(region, levels=c(1,2,3,4,9), 
+                           labels=c("Northeast", "Midwest", "South", "West", 
+                                    "Other"))
+          )
+saveRDS(filter(adat, practicetype == "COMMUNITY", 
+               !(studyperiod %in% c("Washout 2019", "Washout 2020"))),
+        paste0("/data/analytic/A1SA2_PRACTICE-analytic-data_", Sys.Date(), ".rds"))
 
 # Load state stay at home data
    # Data from: "See Which States and Cities Have Told Residents to Stay at 
@@ -26,14 +44,16 @@ adat <- readRDS("/data/analytic/PRACTICE-imputed-data-derv_2021-03-31.rds") %>%
 sah <- read_csv("/data/stay-at-home-orders/sahd.csv") %>%
   mutate(sah.date = mdy(date),
          # Switch state names to abbreviations
-         state = state.abb[match(state, state.name)]) %>%
+         state = ifelse(state == "Puerto Rico", "PR",
+                        state.abb[match(state, state.name)])
+         ) %>%
   select(state, sah.date)
 
-# Drop academic practices (no state recorded). N = 14743
+# Drop academic practices (no state recorded). N = 14747
 sa1.dat <- adat %>% filter(practicetype == "COMMUNITY")
 table(sa1.dat$.imp)
 
-# Drop subjects with missing state. N= 14665
+# Drop subjects with missing state. N= 14669
 sa1.dat <- sa1.dat %>% filter(!is.na(state))
 table(sa1.dat$.imp)
 
@@ -70,8 +90,8 @@ sa1.dat <- left_join(sa1.dat, sah, by="state") %>%
 saveRDS(sa1.dat, paste0("/data/analytic/A1SA_PRACTICE-analytic-data_", Sys.Date(), ".rds"))
 
 # Fit models ###################################################################
-# N = 12592 after excluding washout
-adat <- readRDS("/data/analytic/A1SA_PRACTICE-analytic-data_2021-04-13.rds") %>%
+# N = 12589 after excluding washout
+adat <- readRDS("/data/analytic/A1SA_PRACTICE-analytic-data_2021-10-18.rds") %>%
    filter(!(studyperiod2 %in% c("washout2019", "washout2020")))
 source("1-5_functions.R")
 
@@ -200,4 +220,59 @@ pp.wint.age.c <- survpp(m.wint.age, adat, cp = T, cvar="age") # Conditional on a
 
 pp.wint.age2 <- bind_rows(pp.wint.age, pp.wint.age.c) # Join marginal and conditional
 write.csv(pp.wint.age2, "tables/intermediary/a1sa1_pp_age-interaction-full.csv")
+
+
+
+################################################################################
+# SA 1a Region interaction
+################################################################################
+adat <- readRDS("/data/analytic/A1SA2_PRACTICE-analytic-data_2021-10-18.rds") %>%
+   as.mids()
+# N = 12810
+source("1-5_functions.R")
+
+# Fit model w/ no interaction
+m.nint.r <- with(adat, 
+                 survival::coxph(Surv(surv.days90, surv.ind90) ~ 
+                                    rblack + rhisp + rother + # rwhite ref
+                                    age + gendm + 
+                                    igov + iother + # commercial ref 
+                                    ecog.c + opioid_adv + 
+                                    ccrc + cnsc + cpan + cpro + crcc + cucc + # cbre ref
+                                    diagnosisday + regionf + studypf 
+                                 , 
+                                 robust=T, cluster=practiceid,
+                                 ties = "breslow",
+                                 x = T
+                 )
+)
+
+# Fit model w/ region*period interaction
+m.wint.r <- with(adat, 
+               survival::coxph(Surv(surv.days90, surv.ind90) ~ 
+                                  rblack + rhisp + rother + # rwhite ref
+                                  age + gendm + 
+                                  igov + iother + # commercial ref 
+                                  ecog.c + opioid_adv + 
+                                  ccrc + cnsc + cpan + cpro + crcc + cucc + # cbre ref
+                                  diagnosisday + regionf + studypf +
+                                  
+                                  regionf*studypf
+                               , 
+                               robust=T, cluster=practiceid,
+                               ties = "breslow",
+                               x = T
+               )
+)
+saveRDS(m.wint.r, "models/a1sa1a_region-interaction.rds")
+
+pool.compare(m.wint.r, m.nint.r)
+
+
+pp.wint.r <- survpp(m.wint.r, adat) # Marginal
+pp.wint.r.c <- survpp(m.wint.r, adat, cp = T, cvar="region") # Conditional on race/eth
+
+pp.wint.r2 <- bind_rows(pp.wint.r, pp.wint.r.c) # Join marginal and conditional
+write.csv(pp.wint.r2, "tables/intermediary/a1sa1a_pp_region-interaction-full.csv")
+
 

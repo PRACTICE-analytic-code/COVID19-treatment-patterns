@@ -13,7 +13,7 @@ library(micemd)
 # td <- .0001
 
 # Read in analytic data set
-adat <- readRDS("../../data/analytic/PRACTICE-analytic-data_2021-03-30.rds") %>% 
+adat <- readRDS("../../data/analytic/PRACTICE-analytic-data_2021-08-23.rds") %>% 
   #filter(!(studyperiod %in% c("Washout 2019", "Washout 2020"))) %>%
   mutate(patientid = as.factor(patientid),
          practiceid = as.numeric(factor(practiceid)),
@@ -164,6 +164,15 @@ adat.mi.l <- mice::complete(adat.mi, "long", include = T) %>%
     studypf = factor(studypf, levels = c(1,2,3,4), labels=c("janmar2019", "aprjul2019", "janmar2020", "aprjul2020"))
   )
 
+#adat.mi.l$ecog.c <- with(adat.mi.l, ifelse(ecog >= 2, 1, 0))
+#adat.mi.l$bmi <- with(adat.mi.l, weight_diag_enh / height_diag_enh / height_diag_enh)
+#adat.mi.l$liverf <- with(adat.mi.l, ifelse(glom < 15, 1, 0))
+#adat.mi.l$kidneyf <- with(adat.mi.l, ifelse(bili > 2, 1, 0))
+#adat.mi.l$insclass2 <- fct_collapse(adat.mi.l$insclass,
+#                                    commercial = "commercial",
+#                                    gov = "gov",
+#                                    other = c("other", "selfpay"))
+
 adat.mi2 <- as.mids(adat.mi.l)
 
 # Save imputed data with derived variables
@@ -175,3 +184,69 @@ adat.mi3 <- adat.mi.l %>%
 
 # Save imputed data with derived variables
 saveRDS(adat.mi3, paste("/data/analytic/A1_PRACTICE-imputed-data-derv_", Sys.Date(), ".rds", sep=""))
+
+
+################################################################################
+# Tabulate categorical vars
+################################################################################
+
+adat.mi.cont <- adat.mi.l %>% select(.imp, .id, ecog, weight, height, glom, bili, alan, albu,
+                                     aspa, calc, crea) %>% as.mids()
+
+tc1_0 <- table(adat.mi2$data$ecog.c)
+tc1_0.p <- prop.table(tc1_0)
+tc1 <- with(adat.mi2, table(ecog.c))$analyses
+tc1.p <- with(adat.mi2, prop.table(table(ecog.c)))$analyses
+
+tc2_0 <- table(adat.mi2$data$liverf)
+tc2_0.p <- prop.table(tc2_0)
+tc2 <- with(adat.mi2, table(liverf))$analyses
+tc2.p <- with(adat.mi2, prop.table(table(liverf)))$analyses
+
+tc3_0 <- table(adat.mi2$data$kidneyf)
+tc3_0.p <- prop.table(tc3_0)
+tc3 <- with(adat.mi2, table(kidneyf))$analyses
+tc3.p <- with(adat.mi2, prop.table(table(kidneyf)))$analyses
+
+tab <- tibble(names = character(), imp = numeric(),
+              no = numeric(), nop=numeric(), yes = numeric(), yesp = numeric())
+
+tab <- tab %>% add_row(names = "ecog >= 2", imp = 0,
+                   no = tc1_0[1], nop = tc1_0.p[1],
+                   yes = tc1_0[2], yesp = tc1_0.p[2])
+for(i in 1:10){
+  tab <- tab %>% add_row(names = "ecog >= 2", imp = i,
+                         no = tc1[[i]][1], nop = tc1.p[[i]][1],
+                         yes = tc1[[i]][2], yesp = tc1.p[[i]][2])
+}
+
+tab <- tab %>% add_row(names = "liverf", imp = 0,
+                       no = tc2_0[1], nop = tc2_0.p[1],
+                       yes = tc2_0[2], yesp = tc2_0.p[2])
+for(i in 1:10){
+  tab <- tab %>% add_row(names = "liverf", imp = i,
+                         no = tc2[[i]][1], nop = tc2.p[[i]][1],
+                         yes = tc2[[i]][2], yesp = tc2.p[[i]][2])
+}
+
+tab <- tab %>% add_row(names = "kidneyf", imp = 0,
+                       no = tc3_0[1], nop = tc3_0.p[1],
+                       yes = tc3_0[2], yesp = tc3_0.p[2])
+for(i in 1:10){
+  tab <- tab %>% add_row(names = "kidneyf", imp = i,
+                         no = tc3[[i]][1], nop = tc3.p[[i]][1],
+                         yes = tc3[[i]][2], yesp = tc3.p[[i]][2])
+}
+
+write.csv(tab, "tables/intermediary/PRACTICE_catimp-summary.csv")
+
+################################################################################
+# Create diagnositc plots/tables
+################################################################################
+tiff("figures/PRACTICE_imp-boxwisk-cont.tiff", res=300, width = 6, height = 5, units = 'in')
+mice::bwplot(adat.mi.cont, main="Complete case data (all data) vs imputed (NAs only)")
+dev.off()
+
+tiff("figures/PRACTICE_imp-dens-cont.tiff", res=300, width = 6, height = 5, units = 'in')
+densityplot(adat.mi.cont)
+dev.off()

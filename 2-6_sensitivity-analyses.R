@@ -11,10 +11,10 @@ library(survival)
 ################################################################################
 # Prep data
 ################################################################################
-adat <- readRDS("/data/analytic/A1SA_PRACTICE-analytic-data_2021-04-13.rds")
+adat <- readRDS("/data/analytic/A1SA_PRACTICE-analytic-data_2021-10-18.rds")
 
 # Select imputed data for analysis and merge with myelosuppressive indicator
-adat.merge <- readRDS("/data/analytic/PRACTICE-analytic-data_2021-03-30.rds") %>% 
+adat.merge <- readRDS("/data/analytic/PRACTICE-analytic-data_2021-08-23.rds") %>% 
   select(patientid, myelo.yes, targeted.yes, surv.days.a2)
 
 adat.mi <- adat %>%
@@ -26,7 +26,7 @@ adat.mi <- adat %>%
   mice::filter(cancer %in% c("bre", "pro", "ucc", "nsc"),
                surv.days.a2 <= 60 & surv.ind90 == 1,
                targeted.yes == 0, 
-               studyperiod2 != "washout2020", studyperiod != "washout2019")
+               studyperiod2 != "washout2020", studyperiod2 != "washout2019")
 
 # Save
 saveRDS(adat.mi, paste("/data/analytic/A2SA1_PRACTICE-imputed-data-derv_", Sys.Date(), ".rds", sep=""))
@@ -34,7 +34,7 @@ saveRDS(adat.mi, paste("/data/analytic/A2SA1_PRACTICE-imputed-data-derv_", Sys.D
 ################################################################################
 source("2-5_functions.R")
 
-adat <- readRDS("/data/analytic/A2SA1_PRACTICE-imputed-data-derv_2021-04-13.rds")
+adat <- readRDS("/data/analytic/A2SA1_PRACTICE-imputed-data-derv_2021-08-23.rds")
 
 # Convert to list
 adat.l <- miceadds::mids2datlist(adat)
@@ -146,3 +146,68 @@ pp.wint.age.c <- glmpp(m.wint.age, adat.l, cp = T, cvar="age") # Conditional on 
 
 pp.wint.age2 <- bind_rows(pp.wint.age, pp.wint.age.c) # Join marginal and conditional
 write.csv(pp.wint.age2, paste0("tables/intermediary/a2sa1_pp_age-interaction-full_", Sys.Date(), ".csv"))
+
+
+################################################################################
+# By region
+################################################################################
+adat <- readRDS("/data/analytic/A1SA2_PRACTICE-analytic-data_2021-10-18.rds") 
+source("2-5_functions.R")
+
+# Select imputed data for analysis and merge with myelosuppressive indicator
+adat.merge <- readRDS("/data/analytic/PRACTICE-analytic-data_2021-08-23.rds") %>% 
+  select(patientid, myelo.yes, targeted.yes, surv.days.a2)
+
+adat.mi <- adat %>%
+  # Add variables left out of imputation data set
+  left_join(adat.merge, by="patientid") %>%
+  as.mids() %>%
+  # Apply aim2 exclusion criteria.
+  mice::filter(cancer %in% c("bre", "pro", "ucc", "nsc"),
+               surv.days.a2 <= 60 & surv.ind90 == 1,
+               targeted.yes == 0, 
+               studyperiod != "washout2020", studyperiod != "washout2019")
+
+adat.l <- miceadds::mids2datlist(adat.mi)
+
+m.nint.r <- lapply(adat.l, FUN=function(data){
+  glm.cluster(data=data, 
+              formula=myelo.yes ~ 
+                rblack + rhisp + rother + # rwhite ref
+                age + gendm + 
+                igov + iother + # commercial ref 
+                ecog.c + opioid_adv + 
+                cnsc + cpro + cucc + # cbre ref
+                diagnosisday + studypf +
+                regionf, 
+              family=binomial(link="logit"), 
+              cluster=adat$data$practiceid
+  )
+})
+
+m.wint.r <- lapply(adat.l, FUN=function(data){
+  glm.cluster(data=data, 
+              formula=myelo.yes ~ 
+                rblack + rhisp + rother + # rwhite ref
+                age + gendm + 
+                igov + iother + # commercial ref 
+                ecog.c + opioid_adv + 
+                cnsc + cpro + cucc + # cbre ref
+                diagnosisday + studypf +
+                regionf +
+                regionf*studypf, 
+              family=binomial(link="logit"), 
+              cluster=adat$data$practiceid
+  )
+})
+
+mitml::testModels(m.wint.r, m.nint.r)
+
+pp.wint.r <- glmpp(m.wint.r, adat.l) # Marginal
+pp.wint.r.c <- glmpp(m.wint.r, adat.l, cp = T, cvar="region") # Conditional on age
+
+pp.wint.age2 <- bind_rows(pp.wint.r, pp.wint.r.c) # Join marginal and conditional
+write.csv(pp.wint.age2, paste0("tables/intermediary/a2sa1a_pp_region-interaction-full_", Sys.Date(), ".csv"))
+
+
+
